@@ -1,0 +1,100 @@
+          <div class="overall-score"><strong>${result.overall}</strong><span>/100</span><small>общая готовность</small></div>
+        </header>
+
+        <div class="results-grid">
+          <section class="result-panel dimensions-panel">
+            <div class="panel-heading"><h2>Профиль готовности</h2><span>7 измерений</span></div>
+            <div class="dimension-list">
+              ${Object.entries(result.scores).map(([key, value]) => `
+                <div class="dimension-item">
+                  <div><strong>${escapeHtml(data.dimensions[key])}</strong><span>${value}%</span></div>
+                  <div class="dimension-track"><i style="width:${value}%"></i></div>
+                </div>
+              `).join("")}
+            </div>
+          </section>
+
+          <section class="result-panel insight-panel">
+            <div class="panel-heading"><h2>Что видно</h2><span>Первичный вывод</span></div>
+            <div class="insight-block"><span>Сильные стороны</span><strong>${result.strengths.map(escapeHtml).join(" · ")}</strong></div>
+            <div class="insight-block"><span>Зоны риска</span><strong>${result.risks.map(escapeHtml).join(" · ")}</strong></div>
+            <p class="result-caveat">Это не готовая стратегия, а структурированный снимок текущих решений. После сохранения его можно использовать как новый слой корпоративного контекста IMON.</p>
+          </section>
+        </div>
+
+        <section class="git-save-card">
+          <div>
+            <div class="save-status">Финальный шаг</div>
+            <h2>Зафиксировать эту сессию в GitHub</h2>
+            <p>Сформируем полный пакет ответов и откроем приватный Issue. После его отправки GitHub Action автоматически создаст <code>.json</code> и <code>.md</code>, закоммитит их в <code>submissions/diagnostics/</code> и закроет Issue.</p>
+          </div>
+          <div class="save-actions">
+            <button class="primary-button large" id="submitButton" type="button">Сохранить в GitHub <span>↗</span></button>
+            <button class="secondary-button" id="downloadButton" type="button">Скачать JSON</button>
+          </div>
+          <div class="git-note">GitHub не позволяет статической странице безопасно делать скрытую запись в приватный репозиторий без токена. Поэтому остаётся одно подтверждение на стороне GitHub: <strong>Submit new issue</strong>. Токены в интерфейс не вшиваются.</div>
+        </section>
+
+        <footer class="results-actions">
+          <button class="text-button" id="reviewButton" type="button">← Проверить ответы</button>
+          <button class="text-button" id="copyButton" type="button">Скопировать краткий итог</button>
+        </footer>
+      </section>
+    `;
+
+    document.getElementById("submitButton").addEventListener("click", submitToGitHub);
+    document.getElementById("downloadButton").addEventListener("click", downloadPayload);
+    document.getElementById("copyButton").addEventListener("click", copySummary);
+    document.getElementById("reviewButton").addEventListener("click", () => {
+      state.screen = "review";
+      saveState();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
+  function buildPayload() {
+    return {
+      schema: data.schema,
+      diagnosticVersion: data.version,
+      submissionId: state.submissionId,
+      createdAt: new Date().toISOString(),
+      startedAt: state.startedAt,
+      repository: data.repository,
+      result: state.result || calculateResult(),
+      answers: state.answers
+    };
+  }
+
+  async function submitToGitHub() {
+    const payload = buildPayload();
+    const packet = await encodeGitHubPacket(payload);
+    const marker = `<!-- ${packet.marker} -->\n\n\`\`\`${packet.language}\n${packet.content}\n\`\`\``;
+    const date = new Date().toISOString().slice(0, 10);
+    const title = `[IMON Diagnostic] ${date} — ${payload.result.scenario.title}`;
+    const baseUrl = `https://github.com/${data.repository}/issues/new?title=${encodeURIComponent(title)}`;
+    const url = `${baseUrl}&body=${encodeURIComponent(marker)}`;
+
+    if (url.length > 7800) {
+      try {
+        await navigator.clipboard.writeText(marker);
+        window.open(baseUrl, "_blank", "noopener,noreferrer");
+        toast("Пакет скопирован. Вставь его в Issue и нажми Submit new issue.");
+      } catch {
+        toast("Пакет слишком объёмный для URL. Скачай JSON — ответы не потеряны.");
+      }
+      return;
+    }
+
+    window.open(url, "_blank", "noopener,noreferrer");
+    toast("Осталось нажать Submit new issue. После этого Action сохранит сессию в Git.");
+  }
+
+  async function encodeGitHubPacket(payload) {
+    const json = JSON.stringify(payload);
+    if (!("CompressionStream" in window)) {
+      return { marker: "IMON_DIAGNOSTIC_V1", language: "json", content: json };
+    }
+
+    try {
+      const compressed = new Blob([json], { type: "application/json" })
