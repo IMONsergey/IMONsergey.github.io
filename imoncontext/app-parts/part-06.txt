@@ -1,0 +1,100 @@
+      window.setTimeout(() => document.querySelector(".answer-zone")?.classList.remove("shake"), 320);
+      return;
+    }
+
+    if (index >= total - 1) {
+      goToReview();
+      return;
+    }
+
+    navigateToIndex(index + 1);
+  }
+
+  function navigateToIndex(index) {
+    const questions = visibleQuestions();
+    const clamped = Math.max(0, Math.min(questions.length - 1, index));
+    state.currentQuestionId = questions[clamped]?.id || null;
+    saveState();
+    render();
+    focusPrimaryControl();
+  }
+
+  function focusPrimaryControl() {
+    requestAnimationFrame(() => {
+      const target = document.querySelector("textarea, input.number-answer, .choice input, .scale-button");
+      if (target && (target.tagName === "TEXTAREA" || target.classList.contains("number-answer"))) target.focus({ preventScroll: true });
+    });
+  }
+
+  function goToReview() {
+    const missing = visibleQuestions().filter((question) => question.required && !hasAnswer(question));
+    if (missing.length) {
+      state.currentQuestionId = missing[0].id;
+      saveState();
+      render();
+      toast(`Осталось обязательных вопросов: ${missing.length}`);
+      return;
+    }
+    state.screen = "review";
+    saveState();
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function renderReview() {
+    const questions = visibleQuestions();
+    const progress = completion();
+
+    app.innerHTML = `
+      <section class="review-shell">
+        <header class="review-head">
+          <div>
+            <div class="product-label">Проверка ответов</div>
+            <h1>Перед фиксацией контекста.</h1>
+            <p>Все обязательные вопросы заполнены. Можно быстро пройтись по разделам, изменить любой ответ и только после этого рассчитать профиль.</p>
+          </div>
+          <div class="review-score"><strong>${progress.answered}</strong><span>из ${progress.total}<br>вопросов заполнено</span></div>
+        </header>
+
+        <div class="review-sections">
+          ${data.sections.map((section) => {
+            const sectionQuestions = questions.filter((question) => question.section === section.id);
+            return `
+              <section class="review-section">
+                <div class="review-section-head"><h2>${escapeHtml(section.title)}</h2><span>${sectionQuestions.filter(hasAnswer).length}/${sectionQuestions.length}</span></div>
+                <div class="review-list">
+                  ${sectionQuestions.map((question) => `
+                    <button class="review-item" type="button" data-edit-question="${escapeHtml(question.id)}">
+                      <span>${escapeHtml(question.title)}</span>
+                      <strong>${escapeHtml(formatAnswer(question))}</strong>
+                      <i>Изменить</i>
+                    </button>
+                  `).join("")}
+                </div>
+              </section>
+            `;
+          }).join("")}
+        </div>
+
+        <footer class="review-actions">
+          <button class="secondary-button" id="backToQuestions" type="button">← Вернуться к вопросам</button>
+          <button class="primary-button" id="calculateButton" type="button">Рассчитать профиль <span>→</span></button>
+        </footer>
+      </section>
+    `;
+
+    document.querySelectorAll("[data-edit-question]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.currentQuestionId = button.dataset.editQuestion;
+        state.screen = "test";
+        saveState();
+        render();
+        focusPrimaryControl();
+      });
+    });
+
+    document.getElementById("backToQuestions").addEventListener("click", () => {
+      state.screen = "test";
+      saveState();
+      render();
+      focusPrimaryControl();
