@@ -1,0 +1,100 @@
+    });
+
+    document.getElementById("calculateButton").addEventListener("click", () => {
+      state.result = calculateResult();
+      state.screen = "results";
+      saveState();
+      render();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
+  function formatAnswer(question) {
+    const answer = state.answers[question.id];
+    if (!hasAnswer(question)) return "—";
+    if (question.type === "single") return question.options.find((option) => option.id === answer)?.label || String(answer);
+    if (question.type === "multi") {
+      return question.options.filter((option) => (answer || []).includes(option.id)).map((option) => option.label).join(" · ");
+    }
+    if (question.type === "scale") return `${answer}/${question.max}`;
+    if (question.type === "number") return `${answer}${question.suffix ? ` ${question.suffix}` : ""}`;
+    return String(answer).replace(/\s+/g, " ").trim();
+  }
+
+  function calculateResult() {
+    const raw = {};
+    const max = {};
+    const signals = {};
+    Object.keys(data.dimensions).forEach((key) => { raw[key] = 0; max[key] = 0; });
+
+    visibleQuestions().forEach((question) => {
+      const answer = state.answers[question.id];
+      if (question.type === "single") {
+        const selected = question.options.find((option) => option.id === answer);
+        Object.keys(data.dimensions).forEach((dimension) => {
+          const highest = Math.max(0, ...question.options.map((option) => Number(option.scores?.[dimension] || 0)));
+          max[dimension] += highest;
+        });
+        addScores(selected?.scores, raw);
+        addSignals(selected?.signals, signals);
+      } else if (question.type === "multi") {
+        const selectedIds = Array.isArray(answer) ? answer : [];
+        const selected = question.options.filter((option) => selectedIds.includes(option.id));
+        selected.forEach((option) => { addScores(option.scores, raw); addSignals(option.signals, signals); });
+        const limit = question.maxSelections || question.options.length;
+        Object.keys(data.dimensions).forEach((dimension) => {
+          const values = question.options.map((option) => Number(option.scores?.[dimension] || 0)).sort((a, b) => b - a).slice(0, limit);
+          max[dimension] += values.reduce((sum, value) => sum + value, 0);
+        });
+      } else if (question.type === "scale" && question.dimension) {
+        const value = Number(answer ?? question.defaultValue ?? question.min);
+        const normalized = (value - question.min) / (question.max - question.min);
+        raw[question.dimension] += question.inverseScore ? (1 - normalized) * 10 : normalized * 10;
+        max[question.dimension] += 10;
+      }
+    });
+
+    const scores = {};
+    Object.keys(data.dimensions).forEach((dimension) => {
+      scores[dimension] = max[dimension] ? Math.round((raw[dimension] / max[dimension]) * 100) : 0;
+    });
+
+    const scenarioId = Object.entries(signals).sort((a, b) => b[1] - a[1])[0]?.[0] || "premium_boutique";
+    const sortedDimensions = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    const strengths = sortedDimensions.slice(0, 2).map(([key, score]) => `${data.dimensions[key]} — ${score}%`);
+    const risks = sortedDimensions.slice(-3).reverse().map(([key, score]) => `${data.dimensions[key]} — ${score}%`);
+    const overall = Math.round(Object.values(scores).reduce((sum, value) => sum + value, 0) / Object.keys(scores).length);
+
+    return {
+      overall,
+      scores,
+      scenarioId,
+      scenario: data.scenarios[scenarioId],
+      strengths,
+      risks,
+      generatedAt: new Date().toISOString()
+    };
+  }
+
+  function addScores(source, target) {
+    if (!source) return;
+    Object.entries(source).forEach(([key, value]) => { target[key] = (target[key] || 0) + Number(value || 0); });
+  }
+
+  function addSignals(list, target) {
+    (list || []).forEach((signal) => { target[signal] = (target[signal] || 0) + 1; });
+  }
+
+  function renderResults() {
+    const result = state.result || calculateResult();
+    state.result = result;
+    saveState();
+
+    app.innerHTML = `
+      <section class="results-shell">
+        <header class="results-hero">
+          <div>
+            <div class="product-label">Стратегический профиль</div>
+            <h1>${escapeHtml(result.scenario.title)}</h1>
+            <p>${escapeHtml(result.scenario.description)}</p>
+          </div>
