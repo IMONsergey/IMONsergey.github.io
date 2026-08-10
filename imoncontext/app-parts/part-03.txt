@@ -1,0 +1,100 @@
+    }
+    saveState();
+    render();
+    focusPrimaryControl();
+  }
+
+  function renderQuestionScreen() {
+    const questions = visibleQuestions();
+    const question = ensureCurrentQuestion();
+    const index = currentIndex();
+    const section = currentSection();
+    const sectionIndex = data.sections.findIndex((item) => item.id === section.id);
+    const stats = sectionStats(section.id);
+
+    if (!question) {
+      state.screen = "review";
+      saveState();
+      render();
+      return;
+    }
+
+    app.innerHTML = `
+      <section class="diagnostic-shell">
+        <header class="diagnostic-head">
+          <button class="crumb-button" id="homeButton" type="button">IMON Context</button>
+          <div class="head-progress">
+            <span>${index + 1} / ${questions.length}</span>
+            <div class="thin-progress"><i style="width:${Math.round(((index + 1) / questions.length) * 100)}%"></i></div>
+          </div>
+          <span class="autosave-state">Сохраняется автоматически</span>
+        </header>
+
+        <div class="section-rail" role="navigation" aria-label="Разделы">
+          ${data.sections.map((item, itemIndex) => {
+            const itemStats = sectionStats(item.id);
+            return `<button class="section-pill ${item.id === section.id ? "active" : ""} ${itemStats.complete ? "complete" : ""}" data-section="${escapeHtml(item.id)}" type="button"><span>${itemIndex + 1}</span>${escapeHtml(shortSectionTitle(item.title))}</button>`;
+          }).join("")}
+        </div>
+
+        <article class="question-screen" data-question-id="${escapeHtml(question.id)}">
+          <div class="question-context">
+            <span>Раздел ${sectionIndex + 1} из ${data.sections.length}</span>
+            <strong>${escapeHtml(section.title)}</strong>
+            <span>${stats.answered}/${stats.total} в разделе</span>
+          </div>
+
+          <div class="question-copy">
+            <h2>${escapeHtml(question.title)}</h2>
+            ${question.help ? `<p>${escapeHtml(question.help)}</p>` : ""}
+            ${question.required ? "" : '<span class="optional-label">Необязательно</span>'}
+          </div>
+
+          <div class="answer-zone">
+            ${renderInput(question)}
+          </div>
+
+          <div class="question-error" id="questionError" hidden>Ответь на вопрос или вернись к нему позже.</div>
+
+          <footer class="question-actions">
+            <div class="left-actions">
+              <button class="icon-button" id="prevButton" type="button" ${index === 0 ? "disabled" : ""} aria-label="Предыдущий вопрос">←</button>
+              <button class="text-button" id="skipButton" type="button" ${question.required ? "hidden" : ""}>Пропустить</button>
+            </div>
+            <div class="next-wrap">
+              <span class="keyboard-hint">${question.type === "text" ? "⌘/Ctrl + Enter" : "Enter"}</span>
+              <button class="primary-button" id="nextButton" type="button">${index === questions.length - 1 ? "Проверить ответы" : "Дальше"} <span>→</span></button>
+            </div>
+          </footer>
+        </article>
+      </section>
+    `;
+
+    bindQuestionEvents(question);
+    bindNavigation(question, index, questions.length);
+  }
+
+  function shortSectionTitle(title) {
+    return title
+      .replace("Амбиция и модель компании", "Модель")
+      .replace("Позиционирование и предложения", "Предложение")
+      .replace("Клиенты, продажи и экономика", "Продажи")
+      .replace("Маркетинговая система", "Маркетинг")
+      .replace("Международный рынок", "Международный")
+      .replace("Команда и масштабирование", "Операции");
+  }
+
+  function renderInput(question) {
+    const answer = state.answers[question.id];
+
+    if (question.type === "single" || question.type === "multi") {
+      const selected = question.type === "multi" ? (Array.isArray(answer) ? answer : []) : [answer];
+      return `
+        <div class="choice-list ${question.type === "multi" ? "multi" : "single"}" role="${question.type === "single" ? "radiogroup" : "group"}">
+          ${question.options.map((option, index) => {
+            const isSelected = selected.includes(option.id);
+            return `
+              <label class="choice ${isSelected ? "selected" : ""}" data-choice>
+                <input type="${question.type === "single" ? "radio" : "checkbox"}" name="${escapeHtml(question.id)}" value="${escapeHtml(option.id)}" ${isSelected ? "checked" : ""}>
+                <span class="choice-key">${index < 9 ? index + 1 : ""}</span>
+                <span class="choice-body"><strong>${escapeHtml(option.label)}</strong>${option.note ? `<small>${escapeHtml(option.note)}</small>` : ""}</span>
