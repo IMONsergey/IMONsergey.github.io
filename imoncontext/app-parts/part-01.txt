@@ -1,0 +1,100 @@
+(() => {
+  "use strict";
+
+  const data = window.IMON_DIAGNOSTIC;
+  const app = document.getElementById("app");
+  const resetButton = document.getElementById("resetButton");
+  const STORAGE_KEY = `imon-scale-diagnostic:${data.version}:ui-v2`;
+
+  const initialState = () => ({
+    version: data.version,
+    submissionId: crypto.randomUUID ? crypto.randomUUID() : `imon-${Date.now()}`,
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    screen: "intro",
+    currentQuestionId: null,
+    answers: {},
+    result: null
+  });
+
+  let state = loadState();
+  let transitionTimer = null;
+
+  resetButton.addEventListener("click", () => {
+    if (!window.confirm("Удалить все ответы и начать диагностику заново?")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    state = initialState();
+    render();
+    toast("Ответы удалены");
+  });
+
+  function loadState() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (saved && saved.version === data.version) {
+        return { ...initialState(), ...saved };
+      }
+    } catch (error) {
+      console.warn("Не удалось восстановить прогресс", error);
+    }
+    return initialState();
+  }
+
+  function saveState() {
+    state.updatedAt = new Date().toISOString();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function evaluateCondition(condition) {
+    if (!condition) return true;
+    const answer = state.answers[condition.questionId];
+    if (condition.exists) return answer !== undefined && answer !== null && answer !== "";
+    if (condition.equals !== undefined) return answer === condition.equals;
+    if (condition.includes !== undefined) return Array.isArray(answer) && answer.includes(condition.includes);
+    if (condition.min !== undefined) return Number(answer) >= condition.min;
+    return true;
+  }
+
+  function visibleQuestions() {
+    return data.questions.filter((question) => evaluateCondition(question.showIf));
+  }
+
+  function questionById(id) {
+    return visibleQuestions().find((question) => question.id === id) || null;
+  }
+
+  function hasAnswer(question) {
+    const answer = state.answers[question.id];
+    if (question.type === "multi") return Array.isArray(answer) && answer.length > 0;
+    if (question.type === "scale") return Number.isFinite(Number(answer));
+    if (question.type === "number") return answer !== undefined && answer !== null && answer !== "";
+    return typeof answer === "string" ? answer.trim().length > 0 : answer !== undefined && answer !== null;
+  }
+
+  function completion() {
+    const questions = visibleQuestions();
+    const required = questions.filter((question) => question.required);
+    const answeredRequired = required.filter(hasAnswer);
+    const answeredAll = questions.filter(hasAnswer);
+    return {
+      total: questions.length,
+      answered: answeredAll.length,
+      required: required.length,
+      answeredRequired: answeredRequired.length,
+      percent: questions.length ? Math.round((answeredAll.length / questions.length) * 100) : 0
+    };
+  }
+
+  function sectionStats(sectionId) {
+    const questions = visibleQuestions().filter((question) => question.section === sectionId);
+    const answered = questions.filter(hasAnswer).length;
+    const required = questions.filter((question) => question.required);
