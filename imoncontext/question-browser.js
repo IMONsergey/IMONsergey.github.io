@@ -111,7 +111,8 @@
     const state = loadState();
     const answered = data.questions.filter((question) => hasAnswer(question, state.answers || {})).length;
     const badge = button.querySelector("b");
-    if (badge) badge.textContent = answered ? `${answered}/${data.questions.length}` : String(data.questions.length);
+    const next = answered ? `${answered}/${data.questions.length}` : String(data.questions.length);
+    if (badge && badge.textContent !== next) badge.textContent = next;
   }
 
   function createOverlay() {
@@ -231,14 +232,15 @@
     if (event.key === "Escape" && isOpen) closeBrowser();
   }, true);
 
-  const observer = new MutationObserver(() => {
-    ensureTopbarTrigger();
-    ensureIntroTrigger();
-    updateTriggerState();
-    if (isOpen) renderBrowser();
-  });
+  const appRoot = document.getElementById("app");
+  if (appRoot) {
+    const observer = new MutationObserver(() => {
+      ensureIntroTrigger();
+      updateTriggerState();
+    });
+    observer.observe(appRoot, { childList: true });
+  }
 
-  observer.observe(document.body, { childList: true, subtree: true });
   ensureTopbarTrigger();
   ensureIntroTrigger();
 })();
