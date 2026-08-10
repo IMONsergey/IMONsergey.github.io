@@ -1,0 +1,54 @@
+        .stream()
+        .pipeThrough(new CompressionStream("gzip"));
+      const bytes = new Uint8Array(await new Response(compressed).arrayBuffer());
+      let binary = "";
+      const chunk = 0x8000;
+      for (let index = 0; index < bytes.length; index += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+      }
+      return { marker: "IMON_DIAGNOSTIC_V1_GZIP", language: "text", content: btoa(binary) };
+    } catch (error) {
+      console.warn("Не удалось сжать GitHub-пакет", error);
+      return { marker: "IMON_DIAGNOSTIC_V1", language: "json", content: json };
+    }
+  }
+
+  function downloadPayload() {
+    const payload = buildPayload();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `imon-scale-diagnostic-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast("JSON сохранён");
+  }
+
+  async function copySummary() {
+    const result = state.result || calculateResult();
+    const text = [
+      `IMON Scale Diagnostic — ${new Date().toLocaleDateString("ru-RU")}`,
+      `Модель: ${result.scenario.title}`,
+      `Общая готовность: ${result.overall}/100`,
+      "",
+      ...Object.entries(result.scores).map(([key, value]) => `${data.dimensions[key]}: ${value}%`),
+      "",
+      `Сильные стороны: ${result.strengths.join("; ")}`,
+      `Зоны риска: ${result.risks.join("; ")}`
+    ].join("\n");
+    await navigator.clipboard.writeText(text);
+    toast("Итог скопирован");
+  }
+
+  function toast(message) {
+    document.querySelector(".toast")?.remove();
+    const element = document.createElement("div");
+    element.className = "toast";
+    element.textContent = message;
+    document.body.appendChild(element);
+    window.setTimeout(() => element.remove(), 4200);
+  }
+
+  render();
+})();
