@@ -1,0 +1,100 @@
+        saveState();
+      }
+      document.querySelectorAll("[data-scale-value]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const value = Number(button.dataset.scaleValue);
+          state.answers[question.id] = value;
+          state.result = null;
+          saveState();
+          document.querySelectorAll("[data-scale-value]").forEach((item) => {
+            const selected = Number(item.dataset.scaleValue) === value;
+            item.classList.toggle("selected", selected);
+            item.setAttribute("aria-pressed", String(selected));
+          });
+          document.getElementById("scaleCurrent").textContent = value;
+          hideError();
+        });
+      });
+    }
+  }
+
+  function updateChoiceStyles(questionId) {
+    document.querySelectorAll(`input[name="${CSS.escape(questionId)}"]`).forEach((input) => {
+      input.closest("[data-choice]")?.classList.toggle("selected", input.checked);
+    });
+  }
+
+  function updateSelectedCount(question) {
+    if (!question.maxSelections) return;
+    const node = document.getElementById("selectedCount");
+    const current = Array.isArray(state.answers[question.id]) ? state.answers[question.id].length : 0;
+    if (node) node.textContent = current;
+  }
+
+  function hideError() {
+    const error = document.getElementById("questionError");
+    if (error) error.hidden = true;
+  }
+
+  function bindNavigation(question, index, total) {
+    document.getElementById("homeButton").addEventListener("click", () => {
+      state.screen = "intro";
+      saveState();
+      render();
+    });
+
+    document.getElementById("prevButton").addEventListener("click", () => navigateToIndex(index - 1));
+    document.getElementById("skipButton")?.addEventListener("click", () => navigateToIndex(index + 1));
+    document.getElementById("nextButton").addEventListener("click", () => advance(question, index, total));
+
+    document.querySelectorAll("[data-section]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const sectionQuestions = visibleQuestions().filter((item) => item.section === button.dataset.section);
+        const target = sectionQuestions.find((item) => !hasAnswer(item)) || sectionQuestions[0];
+        if (!target) return;
+        state.currentQuestionId = target.id;
+        saveState();
+        render();
+        focusPrimaryControl();
+      });
+    });
+
+    document.onkeydown = keyboardHandler;
+
+    function keyboardHandler(event) {
+      const active = document.activeElement;
+      const typing = active && (active.tagName === "TEXTAREA" || active.tagName === "INPUT");
+
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        advance(question, index, total);
+        return;
+      }
+
+      if (!typing && event.key === "Enter") {
+        event.preventDefault();
+        advance(question, index, total);
+        return;
+      }
+
+      if (!typing && event.key === "ArrowLeft" && index > 0) {
+        event.preventDefault();
+        navigateToIndex(index - 1);
+        return;
+      }
+
+      if (!typing && /^[1-9]$/.test(event.key) && (question.type === "single" || question.type === "multi")) {
+        const input = document.querySelectorAll(`input[name="${CSS.escape(question.id)}"]`)[Number(event.key) - 1];
+        if (input) {
+          event.preventDefault();
+          input.click();
+        }
+      }
+    }
+  }
+
+  function advance(question, index, total) {
+    if (question.required && !hasAnswer(question)) {
+      const error = document.getElementById("questionError");
+      if (error) error.hidden = false;
+      document.querySelector(".answer-zone")?.classList.add("shake");
