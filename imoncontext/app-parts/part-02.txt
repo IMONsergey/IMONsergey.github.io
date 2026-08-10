@@ -1,0 +1,100 @@
+    return {
+      total: questions.length,
+      answered,
+      complete: required.length > 0 && required.every(hasAnswer)
+    };
+  }
+
+  function ensureCurrentQuestion() {
+    const questions = visibleQuestions();
+    if (!questions.length) return null;
+    const current = questionById(state.currentQuestionId);
+    if (current) return current;
+    const firstUnanswered = questions.find((question) => !hasAnswer(question));
+    state.currentQuestionId = (firstUnanswered || questions[0]).id;
+    saveState();
+    return questionById(state.currentQuestionId);
+  }
+
+  function currentIndex() {
+    const questions = visibleQuestions();
+    const index = questions.findIndex((question) => question.id === state.currentQuestionId);
+    return index >= 0 ? index : 0;
+  }
+
+  function currentSection() {
+    const question = ensureCurrentQuestion();
+    return data.sections.find((section) => section.id === question?.section) || data.sections[0];
+  }
+
+  function render() {
+    clearTimeout(transitionTimer);
+    document.onkeydown = null;
+    resetButton.hidden = state.screen === "intro" && Object.keys(state.answers).length === 0;
+    document.body.dataset.screen = state.screen;
+
+    if (state.screen === "intro") renderIntro();
+    else if (state.screen === "test") renderQuestionScreen();
+    else if (state.screen === "review") renderReview();
+    else renderResults();
+  }
+
+  function renderIntro() {
+    const progress = completion();
+    const hasProgress = progress.answered > 0;
+
+    app.innerHTML = `
+      <section class="intro-shell">
+        <div class="intro-copy">
+          <div class="product-label">IMON Context</div>
+          <h1>Соберём контекст, на котором можно принимать решения.</h1>
+          <p class="intro-lead">48 вопросов о модели IMON, предложении, клиентах, маркетинге, международном развитии и операционной системе. Ответы сохраняются в браузере сразу, а завершённая сессия фиксируется в приватном GitHub-репозитории.</p>
+          <div class="intro-actions">
+            <button class="primary-button" id="startButton" type="button">${hasProgress ? "Продолжить" : "Начать"}</button>
+            ${hasProgress ? `<button class="secondary-button" id="restartInlineButton" type="button">Начать заново</button>` : ""}
+          </div>
+          ${hasProgress ? `
+            <div class="resume-line">
+              <span>${progress.answered} из ${progress.total} ответов</span>
+              <span>${progress.percent}%</span>
+            </div>
+            <div class="thin-progress"><i style="width:${progress.percent}%"></i></div>
+          ` : ""}
+        </div>
+
+        <aside class="intro-meta">
+          <div class="meta-block">
+            <span>Формат</span>
+            <strong>Один вопрос на экран</strong>
+          </div>
+          <div class="meta-block">
+            <span>Черновик</span>
+            <strong>Автосохранение после каждого изменения</strong>
+          </div>
+          <div class="meta-block">
+            <span>Финал</span>
+            <strong>Review → результат → GitHub</strong>
+          </div>
+          <div class="privacy-note">Репозиторий сейчас приватный. Сессия сохраняется через GitHub Issue и Action; в коде страницы нет токенов или секретов.</div>
+        </aside>
+      </section>
+
+      <section class="section-preview" aria-label="Разделы диагностики">
+        ${data.sections.map((section, index) => `
+          <div class="section-preview-item">
+            <span>${String(index + 1).padStart(2, "0")}</span>
+            <div><strong>${escapeHtml(section.title)}</strong><p>${escapeHtml(section.description)}</p></div>
+          </div>
+        `).join("")}
+      </section>
+    `;
+
+    document.getElementById("startButton").addEventListener("click", startTest);
+    document.getElementById("restartInlineButton")?.addEventListener("click", () => resetButton.click());
+  }
+
+  function startTest() {
+    state.screen = "test";
+    const questions = visibleQuestions();
+    if (!state.currentQuestionId) {
+      state.currentQuestionId = (questions.find((question) => !hasAnswer(question)) || questions[0])?.id || null;
