@@ -1,0 +1,100 @@
+                <span class="choice-check">✓</span>
+              </label>
+            `;
+          }).join("")}
+        </div>
+        ${question.maxSelections ? `<p class="selection-note">Можно выбрать до ${question.maxSelections}. Выбрано: <strong id="selectedCount">${selected.length}</strong>.</p>` : ""}
+      `;
+    }
+
+    if (question.type === "text") {
+      return `
+        <div class="text-answer-wrap">
+          <textarea class="text-answer" id="textAnswer" data-question-id="${escapeHtml(question.id)}" placeholder="Напиши так, как думаешь. Не нужно формулировать идеально.">${escapeHtml(answer || "")}</textarea>
+          <div class="input-meta"><span>Ответ сохраняется по мере ввода</span><span id="charCount">${String(answer || "").length} знаков</span></div>
+        </div>
+      `;
+    }
+
+    if (question.type === "number") {
+      return `
+        <div class="number-answer-wrap">
+          <input class="number-answer" id="numberAnswer" data-question-id="${escapeHtml(question.id)}" type="number" min="0" inputmode="decimal" value="${escapeHtml(answer ?? "")}" placeholder="0">
+          ${question.suffix ? `<span>${escapeHtml(question.suffix)}</span>` : ""}
+        </div>
+      `;
+    }
+
+    if (question.type === "scale") {
+      const value = Number(answer ?? question.defaultValue ?? question.min);
+      return `
+        <div class="scale-answer">
+          <div class="scale-label-row"><span>${escapeHtml(question.minLabel || "Минимум")}</span><span>${escapeHtml(question.maxLabel || "Максимум")}</span></div>
+          <div class="scale-buttons" role="radiogroup" aria-label="Шкала от ${question.min} до ${question.max}">
+            ${Array.from({ length: question.max - question.min + 1 }, (_, offset) => question.min + offset).map((item) => `
+              <button class="scale-button ${item === value ? "selected" : ""}" type="button" data-scale-value="${item}" aria-pressed="${item === value}">${item}</button>
+            `).join("")}
+          </div>
+          <div class="scale-current"><strong id="scaleCurrent">${value}</strong><span>из ${question.max}</span></div>
+        </div>
+      `;
+    }
+
+    return "";
+  }
+
+  function bindQuestionEvents(question) {
+    if (question.type === "single" || question.type === "multi") {
+      const inputs = [...document.querySelectorAll(`input[name="${CSS.escape(question.id)}"]`)];
+      inputs.forEach((input) => {
+        input.addEventListener("change", () => {
+          if (question.type === "single") {
+            state.answers[question.id] = input.value;
+          } else {
+            const current = Array.isArray(state.answers[question.id]) ? [...state.answers[question.id]] : [];
+            if (input.checked && !current.includes(input.value)) {
+              if (question.maxSelections && current.length >= question.maxSelections) {
+                input.checked = false;
+                toast(`Можно выбрать не больше ${question.maxSelections}`);
+                return;
+              }
+              current.push(input.value);
+            } else if (!input.checked) {
+              const target = current.indexOf(input.value);
+              if (target >= 0) current.splice(target, 1);
+            }
+            state.answers[question.id] = current;
+          }
+          state.result = null;
+          saveState();
+          updateChoiceStyles(question.id);
+          updateSelectedCount(question);
+          hideError();
+        });
+      });
+    }
+
+    if (question.type === "text") {
+      const input = document.getElementById("textAnswer");
+      input.addEventListener("input", () => {
+        state.answers[question.id] = input.value;
+        state.result = null;
+        document.getElementById("charCount").textContent = `${input.value.length} знаков`;
+        saveState();
+        hideError();
+      });
+    }
+
+    if (question.type === "number") {
+      const input = document.getElementById("numberAnswer");
+      input.addEventListener("input", () => {
+        state.answers[question.id] = input.value;
+        state.result = null;
+        saveState();
+        hideError();
+      });
+    }
+
+    if (question.type === "scale") {
+      if (state.answers[question.id] === undefined) {
+        state.answers[question.id] = Number(question.defaultValue ?? question.min);
